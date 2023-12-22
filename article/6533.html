@@ -1,0 +1,275 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>Stack Overflow-高级ROP | HalloH's Blog</title><meta name="author" content="HalloH"><meta name="copyright" content="HalloH"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="Stack Overflow - 高级ROP只有一部分，基础不太好，等基础学完再填坑。 ret2dlreslove原理之前学习过ELF使用了延迟绑定，基本思想就是当函数第一次被调用的时候才进行绑定(符号查找、重定位等)。 在Linux中，程序使用_dl_runtime_resolve(link_map_obj, reloc_offset) 来对动态链接的函数进行重定位。如果可以控制相应的参数及其对">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Stack Overflow-高级ROP">
+<meta property="og:url" content="https://ha1loh.github.io/article/6533.html">
+<meta property="og:site_name" content="HalloH&#39;s Blog">
+<meta property="og:description" content="Stack Overflow - 高级ROP只有一部分，基础不太好，等基础学完再填坑。 ret2dlreslove原理之前学习过ELF使用了延迟绑定，基本思想就是当函数第一次被调用的时候才进行绑定(符号查找、重定位等)。 在Linux中，程序使用_dl_runtime_resolve(link_map_obj, reloc_offset) 来对动态链接的函数进行重定位。如果可以控制相应的参数及其对">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221045523.jpg">
+<meta property="article:published_time" content="2023-10-31T11:03:22.000Z">
+<meta property="article:modified_time" content="2023-12-22T16:06:37.721Z">
+<meta property="article:author" content="HalloH">
+<meta property="article:tag" content="PWN">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221045523.jpg"><link rel="shortcut icon" href="/img/icon.png"><link rel="canonical" href="https://ha1loh.github.io/article/6533.html"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//busuanzi.ibruce.info"/><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css" media="print" onload="this.media='all'"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/node-snackbar/dist/snackbar.min.css" media="print" onload="this.media='all'"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox/fancybox.min.css" media="print" onload="this.media='all'"><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"找不到您查询的内容：${query}","hits_stats":"共找到 ${hits} 篇文章"}},
+  translate: undefined,
+  noticeOutdate: undefined,
+  highlight: undefined,
+  copy: {
+    success: '复制成功',
+    error: '复制错误',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '天',
+  dateSuffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'fancybox',
+  Snackbar: {"chs_to_cht":"你已切换为繁体中文","cht_to_chs":"你已切换为简体中文","day_to_night":"你已切换为深色模式","night_to_day":"你已切换为浅色模式","bgLight":"#49b1f5","bgDark":"#1f1f1f","position":"top-right"},
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: '加载更多'
+  },
+  isPhotoFigcaption: false,
+  islazyload: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: false,
+  },
+  autoDarkmode: false
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'Stack Overflow-高级ROP',
+  isPost: true,
+  isHome: false,
+  isHighlightShrink: true,
+  isToc: true,
+  postUpdate: '2023-12-23 00:06:37'
+}</script><script>(win=>{
+      win.saveToLocal = {
+        set: (key, value, ttl) => {
+          if (ttl === 0) return
+          const now = Date.now()
+          const expiry = now + ttl * 86400000
+          const item = {
+            value,
+            expiry
+          }
+          localStorage.setItem(key, JSON.stringify(item))
+        },
+      
+        get: key => {
+          const itemStr = localStorage.getItem(key)
+      
+          if (!itemStr) {
+            return undefined
+          }
+          const item = JSON.parse(itemStr)
+          const now = Date.now()
+      
+          if (now > item.expiry) {
+            localStorage.removeItem(key)
+            return undefined
+          }
+          return item.value
+        }
+      }
+    
+      win.getScript = (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        script.onerror = reject
+        script.onload = script.onreadystatechange = function() {
+          const loadState = this.readyState
+          if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+          script.onload = script.onreadystatechange = null
+          resolve()
+        }
+
+        Object.keys(attr).forEach(key => {
+          script.setAttribute(key, attr[key])
+        })
+
+        document.head.appendChild(script)
+      })
+    
+      win.getCSS = (url, id = false) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onerror = reject
+        link.onload = link.onreadystatechange = function() {
+          const loadState = this.readyState
+          if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+          link.onload = link.onreadystatechange = null
+          resolve()
+        }
+        document.head.appendChild(link)
+      })
+    
+      win.activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      win.activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+      const t = saveToLocal.get('theme')
+    
+        if (t === 'dark') activateDarkMode()
+        else if (t === 'light') activateLightMode()
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        if (asideStatus === 'hide') {
+          document.documentElement.classList.add('hide-aside')
+        } else {
+          document.documentElement.classList.remove('hide-aside')
+        }
+      }
+    
+      const detectApple = () => {
+        if(/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)){
+          document.documentElement.classList.add('apple')
+        }
+      }
+      detectApple()
+    })(window)</script><meta name="generator" content="Hexo 7.0.0"></head><body><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img is-center"><img src="/img/head.jpg" onerror="onerror=null;src='/img/friend_404.gif'" alt="avatar"/></div><div class="sidebar-site-data site-data is-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">13</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">3</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">1</div></a></div><hr class="custom-hr"/><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> Home</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-archive"></i><span> Archives</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> Tags</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> Categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-link"></i><span> Link</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-heart"></i><span> About</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header" style="background-image: url('https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221045523.jpg')"><nav id="nav"><span id="blog-info"><a href="/" title="HalloH's Blog"><span class="site-name">HalloH's Blog</span></a></span><div id="menus"><div id="search-button"><a class="site-page social-icon search" href="javascript:void(0);"><i class="fas fa-search fa-fw"></i><span> 搜索</span></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> Home</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-archive"></i><span> Archives</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> Tags</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> Categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-link"></i><span> Link</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-heart"></i><span> About</span></a></div></div><div id="toggle-menu"><a class="site-page" href="javascript:void(0);"><i class="fas fa-bars fa-fw"></i></a></div></div></nav><div id="post-info"><h1 class="post-title">Stack Overflow-高级ROP</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="far fa-calendar-alt fa-fw post-meta-icon"></i><span class="post-meta-label">发表于</span><time class="post-meta-date-created" datetime="2023-10-31T11:03:22.000Z" title="发表于 2023-10-31 19:03:22">2023-10-31</time><span class="post-meta-separator">|</span><i class="fas fa-history fa-fw post-meta-icon"></i><span class="post-meta-label">更新于</span><time class="post-meta-date-updated" datetime="2023-12-22T16:06:37.721Z" title="更新于 2023-12-23 00:06:37">2023-12-23</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E7%AC%94%E8%AE%B0/">笔记</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">字数总计:</span><span class="word-count">2.7k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">阅读时长:</span><span>8分钟</span></span><span class="post-meta-separator">|</span><span class="post-meta-pv-cv" id="" data-flag-title="Stack Overflow-高级ROP"><i class="far fa-eye fa-fw post-meta-icon"></i><span class="post-meta-label">阅读量:</span><span id="busuanzi_value_page_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="post-content" id="article-container"><h1 id="Stack-Overflow-高级ROP"><a href="#Stack-Overflow-高级ROP" class="headerlink" title="Stack Overflow - 高级ROP"></a>Stack Overflow - 高级ROP</h1><p>只有一部分，基础不太好，等基础学完再填坑。</p>
+<h2 id="ret2dlreslove"><a href="#ret2dlreslove" class="headerlink" title="ret2dlreslove"></a>ret2dlreslove</h2><h3 id="原理"><a href="#原理" class="headerlink" title="原理"></a>原理</h3><p>之前学习过ELF使用了延迟绑定，基本思想就是当函数第一次被调用的时候才进行绑定(符号查找、重定位等)。</p>
+<p>在Linux中，程序使用<code>_dl_runtime_resolve(link_map_obj, reloc_offset)</code> 来对动态链接的函数进行重定位。如果可以控制相应的参数及其对应地址内容就可以控制解析的函数。要注意的是，32位的reloc_arg和64位的有区别：32位使用reloc_offset, 64位使用reloc_index。</p>
+<p>具体一点，动态链接器在解析符号地址时所使用的重定位表项、动态符号表、动态字符串表都是从目标文件中的动态节 <code>.dynamic</code> 索引得到的。如果可以修改其中的某些内容，使得最后动态链接器解析的符号是我们想要解析的符号，那么攻击就达成了。</p>
+<p>在linux下，二进制引用的外部符号加载方式有三种，FULL_RELRO、PARTIAL_RELRO、NO_RELRO，在PARTIAL_RELRO和NO_RELRO的情况下，外部符号的地址延迟加载。在 NO_RELRO 设置中，全局偏移表 (GOT) 中的所有条目均为可写；在 PARTIAL_RELRO 设置中，只有部分全局偏移表 (GOT) 条目在动态链接器解析符号后被设置为只读，其他条目仍然可写；使用 FULL_RELRO 设置时，在动态链接器解析所有符号之后，整个全局偏移表 (GOT) 都会被设置为只读。这意味着任何试图覆写 GOT 条目的尝试都会导致段错误，防止攻击者通过函数指针劫持控制流或操纵共享库行为。</p>
+<h3 id="dl-runtime-resolve函数具体运行模式"><a href="#dl-runtime-resolve函数具体运行模式" class="headerlink" title="_dl_runtime_resolve函数具体运行模式"></a>_dl_runtime_resolve函数具体运行模式</h3><p>_dl_runtime_resolve函数如何使程序第一次调用一个函数：</p>
+<ol>
+<li>首先用link_map访问.dynamic，分别取出.dynstr、 .dynsym、 .rel.plt的地址；</li>
+<li>.rel.plt + 参数reloc_index，求出当前函数的重定位表项Elf32_Rel的指针，记作rel;</li>
+<li>rel-&gt;r_info &gt;&gt; 8作为.dynsym的下标，求出当前函数的符号表项Elf32_Sym的指针，记作sym;</li>
+<li>.dynstr + sym -&gt; st_name得出符号名字符串指针;</li>
+<li>在动态链接库查找这个函数的地址，并且把地址赋值给*rel -&gt; r_offset，即GOT表;</li>
+<li>最后调用这个函数</li>
+</ol>
+<p>通过一个示例来解释：</p>
+<p>题目来源：XDCTF2015-pwn200</p>
+<p>在0x080485b4处下断点，然后si进入call strlen@plt;</p>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221904611.png" alt="image-20230801142532701"></p>
+<p>进去后能看到首先会执行下面那一部分</p>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221904600.png" alt="image-20230801155644489"></p>
+<p>对应之前说的，跳转到自己的plt表项，可以查看jmp的地址存的是什么</p>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221904620.png" alt="image-20230801142743720"></p>
+<p>存的其实就是下一条指令</p>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221904621.png" alt="image-20230801142845668"></p>
+<p>接着单步执行，会先push进去一个0x10，然后jmp</p>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221904626.png" alt="image-20230801142918804"></p>
+<p>jmp的就是它的公共plt表项</p>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221904629.png" alt="image-20230801142955886"></p>
+<p>push后jmp，jmp跳到了<code>_dl_runtime_resolve</code>这个函数的地址</p>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221904027.png" alt="image-20230801143016416"></p>
+<p>中间push了两次，第一次是<code>push 0x10</code>，第二次是<code>push DWORD PTR ds:0x804a004</code></p>
+<p>查看0x804a004存放的是什么：</p>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221904044.png" alt="image-20230801143206089"></p>
+<p>存放的是link_map的地址，通过这个地址能够找到.dynamic的地址，第三个就是.dynamic的地址</p>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221904062.png" alt="image-20230801143302425"></p>
+<p>通过这个地址能够找到.dynstr和.dynsym和.rel.plt的地址</p>
+<blockquote>
+<p>.dynstr 的地址是 .dynamic + 0x44 -&gt; 0x08048278</p>
+<p>.dynsym 的地址是 .dynamic + 0x4c -&gt; 0x080481d8</p>
+<p>.rel.plt 的地址是 .dynamic + 0x84 -&gt; 0x08048330</p>
+</blockquote>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221904078.png" alt="image-20230801143437083"></p>
+<p>.rel.plt的地址加上参数reloc_arg就是函数重定向表项Elf32_Rel的指针，记作rel</p>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221904094.png" alt="image-20230801143853477"></p>
+<p>通过这个 rel 可以得到以下信息</p>
+<blockquote>
+<p>r_offset &#x3D; 0x0804a014  &#x2F;&#x2F;指向GOT表的指针</p>
+<p>r_info &#x3D; 0x00000407</p>
+</blockquote>
+<p>将r_info &gt;&gt; 8，即0x00000407 &gt;&gt;8 &#x3D; 4作为.dynsym中的下标，这里的 “&gt;&gt;” 意思是右移</p>
+<p>我们来到 0x080481d8（上面找到的那个 .dynsym 的地址）看一下，在标号为 4 的地方，就是函数名称的偏移：name_offset</p>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221904111.png" alt="image-20230801144045059"></p>
+<p>.dynstr + name_offset 就是这个函数的符号名字符串 st_name</p>
+<p>0x08048278 + 0x20 -&gt; 0x8048298‬</p>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221904323.png" alt="image-20230801144307804"></p>
+<p>最后在动态链接库查找这个函数的地址，并且把地址赋值给 *rel -&gt; r_offset，即 GOT 表就可以了</p>
+<p>整理一下</p>
+<ul>
+<li>dl_runtime_resolve 需要两个参数，一个是 reloc_arg，就是函数自己的 plt 表项 push 的内容，一个是link_map，这个是公共 plt 表项 push 进栈的，通过它可以找到.dynamic的地址</li>
+<li>而 .dynamic 可以找到 .dynstr、.dynsym、.rel.plt 的这些节的地址</li>
+<li>.rel.plt 的地址加上 reloc_arg 可以得到函数重定位表项 Elf32_Rel 的指针，这个指针对应的里面放着 r_offset、r_info</li>
+<li>将 r_info&gt;&gt;8 得到的就是 .dynsym 的下标，这个下标的内容就是 name_offset，右移八位是因为r_info高位表示索引，所以要右移八位</li>
+<li>.dynstr+name_offset 得到的就是 st_name，而 st_name 存放的就是要调用函数的函数名</li>
+<li>在动态链接库里面找这个函数的地址，赋值给 *rel-&gt;r_offset，也就是 GOT 表就完成了一次函数的动态链接</li>
+</ul>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221904336.jpg" alt="yuque_diagram"></p>
+<p>上面的分析可以得出，如果控制相应的参数及其对应地址内容就可以控制解析的函数。动态链接器在解析符号地址时所使用的重定位表项、动态符号表、动态字符串表都是从目标文件中的动态节 <code>.dynamic</code> 索引得到的。所以如果我们能够修改其中的某些内容使得最后动态链接器解析的符号是我们想要解析的符号，那么攻击就达成了。</p>
+<h3 id="保护措施和攻击"><a href="#保护措施和攻击" class="headerlink" title="保护措施和攻击"></a>保护措施和攻击</h3><p>在学习攻击之前，先复习一下RELRO保护。</p>
+<p>前面学习过延迟绑定，简言之就是符号解析只发生在第一次调用时，通过PLT表进行，解析后相应的GOT表条目就会被修改为正确的函数地址，在这种情况下，.got.plt必须是可写的。</p>
+<p>RELRO能够将符号重定位表设置为只读，或者在程序启动时就绑定所有的动态符号，从而避免GOT上的地址被篡改。</p>
+<ul>
+<li>partial PELRO：包括.dynamic和.got等的一些段在初始化后会被标记为只读</li>
+<li>Full RELRO：除了partial PELRO，延迟绑定会被禁止（有的文章说是惰性解析，问了AI说延迟绑定是一种特定的惰性解析技术，这里就暂时先理解为延迟绑定吧），所有的导入符号将在开始时被解析，.got.plt 段会被完全初始化为目标函数的终地址，并被mprotect标记为只读。GOT[1] 与 GOT[2] 条目即link_map和_dl_runtime_reolve的地址将不会被装入。</li>
+</ul>
+<h4 id="思路一——直接控制重定位表项的相关内容"><a href="#思路一——直接控制重定位表项的相关内容" class="headerlink" title="思路一——直接控制重定位表项的相关内容"></a>思路一——直接控制重定位表项的相关内容</h4><p>根据上面的分析，其实最终解析符号地址时是依据符号的名字，那如果直接修改.dynstr的内容就可以执行我们想要的函数。比如write改成system。但是，动态字符串表和代码映射在一起，是只读的。此外，类似地，我们可以发现动态符号表、重定位表项都是只读的。如果可以控制程序执行流，那么就可以伪造合适的重定位偏移从而达到调用目标函数的目的。</p>
+<h4 id="思路二——间接控制重定位表项的相关内容"><a href="#思路二——间接控制重定位表项的相关内容" class="headerlink" title="思路二——间接控制重定位表项的相关内容"></a>思路二——间接控制重定位表项的相关内容</h4><p>可以修改动态节中的内容，能够控制带解析符号对应的字符串，从而达到执行目标函数的目的。</p>
+<h4 id="思路三——伪造-link-map"><a href="#思路三——伪造-link-map" class="headerlink" title="思路三——伪造 link_map"></a>思路三——伪造 link_map</h4><p>由于动态链接器在解析符号地址时，主要依赖link_map来查询相关表项的地址，因此如果可以成功伪造link_map，也就可以控制程序执行目标函数。</p>
+<h3 id="32位"><a href="#32位" class="headerlink" title="32位"></a>32位</h3><h4 id="NO-RELRO"><a href="#NO-RELRO" class="headerlink" title="NO RELRO"></a>NO RELRO</h4><h4 id="计算reloc-arg"><a href="#计算reloc-arg" class="headerlink" title="计算reloc_arg"></a>计算reloc_arg</h4><p><code>objdump -s -j .rel.plt ./main</code></p>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221904354.png" alt="image-20230804203831278"></p>
+<p><code>reloc_arg = fake_rel_plt_addr - 0x8048324</code>，得到伪造的 .rel.plt 节段在程序中的实际地址</p>
+<h4 id="计算r-info"><a href="#计算r-info" class="headerlink" title="计算r_info"></a>计算r_info</h4><p><code>n = (欲伪造的地址- .dynsym 基地址) / 0x10</code>，其中<code>dynsym_base_addr</code> 是 <code>.dynsym</code> 节段在内存中的起始地址，<code>0x10</code> 是每个符号表项的大小。</p>
+<p><code>r_info = n&lt;&lt;8</code>，将 <code>n</code> 左移 8 位，得到最终的 r_info 值</p>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221904370.png" alt="image-20230804205712057"></p>
+<p>还需要过#define ELF32_R_TYPE(val)  ((val) &amp; 0xff)宏定义，ELF32_R_TYPE(r_info)&#x3D;7，因此</p>
+<p><code>r_info = r_info + 0x7</code></p>
+<h4 id="计算name-offset"><a href="#计算name-offset" class="headerlink" title="计算name_offset"></a>计算name_offset</h4><p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221904386.png" alt="image-20230804211455184"></p>
+<p><code>st_name = fake_dynstr_addr - 0x804821c</code>，计算函数名在 <code>.dynstr</code> 节段中的偏移量。</p>
+<h3 id="64位"><a href="#64位" class="headerlink" title="64位"></a>64位</h3><p>复现完填坑</p>
+<h2 id="SROP"><a href="#SROP" class="headerlink" title="SROP"></a>SROP</h2><h3 id="原理-1"><a href="#原理-1" class="headerlink" title="原理"></a>原理</h3><p>SROP（Sigreturn Oriented Programming），sigreturn是一个系统调用，在 unix 系统发生 signal 的时候会被间接调用</p>
+<p>当系统进程发起（deliver）一个 signal 的时候，该进程会被短暂的挂起（suspend），进入内核①，然后内核对该进程保留相应的上下文，跳转到之前注册好的 signal handler 中处理 signal②，当 signal 返回后③，内核为进程恢复之前保留的上下文，恢复进程的执行④</p>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221905248.png"></p>
+<p>内核会为该进程保存相应的上下文，<strong>主要是将所有寄存器压入栈中，以及压入 signal 信息，以及指向 sigreturn 的系统调用地址</strong>。此时栈的结构如下图所示，我们称 ucontext 以及 siginfo 这一段为 Signal Frame。<strong>需要注意的是，这一部分是在用户进程的地址空间的。</strong>之后会跳转到注册过的 signal handler 中处理相应的 signal。因此，当 signal handler 执行完之后，就会执行 sigreturn 代码。</p>
+<p><img src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221905134.png"></p>
+<p>signal handler 返回后，内核为执行 sigreturn 系统调用，为该进程恢复之前保存的上下文，其中包括将所有压入的寄存器，重新 pop 回对应的寄存器，最后恢复进程的执行。其中，32 位的 sigreturn 的调用号为 119(0x77)，64 位的系统调用号为 15(0xf)。</p>
+<h3 id="攻击方法"><a href="#攻击方法" class="headerlink" title="攻击方法"></a>攻击方法</h3><p>内核主要做的工作就是为进程保存上下文，并且恢复上下文。这个主要的变动都在 Signal Frame 中。</p>
+<ol>
+<li>Signal Frame 被保存在用户的地址空间中，所以用户是可以读写的</li>
+<li>由于内核与信号处理程序无关 (kernel agnostic about signal handlers)，它并不会去记录这个 signal 对应的 Signal Frame，所以当执行 sigreturn 系统调用时，此时的 Signal Frame 并不一定是之前内核为用户进程保存的 Signal Frame</li>
+</ol>
+<h3 id="攻击示例"><a href="#攻击示例" class="headerlink" title="攻击示例"></a>攻击示例</h3><ol>
+<li><p>假设攻击者可以控制用户进程的栈，那么它就可以伪造一个 Signal Frame。当系统执行完 sigreturn 系统调用之后，会执行一系列的 pop 指令以便于恢复相应寄存器的值，当执行到 rip 时，就会将程序执行流指向 syscall 地址，根据相应寄存器的值，此时，便会得到一个 shell。</p>
+</li>
+<li><p>如果需要执行函数，那么可以<strong>控制栈指针</strong>或者<strong>把原来的RIP指向的syscall gadget换成syscall; ret gadget</strong></p>
+</li>
+</ol>
+<p>构造 ROP 攻击的时候，需要满足:</p>
+<ol>
+<li>可以通过栈溢出来控制栈的内容</li>
+<li>需要知道相应的地址：”&#x2F;bin&#x2F;sh” Signal Frame syscall sigreturn</li>
+<li>需要有够大的空间来塞下整个 sigal frame</li>
+</ol>
+<h3 id="示例复现"><a href="#示例复现" class="headerlink" title="示例复现"></a>示例复现</h3><h2 id="参考"><a href="#参考" class="headerlink" title="参考"></a>参考</h2><ul>
+<li><p><a target="_blank" rel="noopener" href="https://ctf-wiki.org/pwn/linux/user-mode/stackoverflow/x86/advanced-rop/ret2dlresolve/">ret2dlresolve - CTF Wiki (ctf-wiki.org)</a></p>
+</li>
+<li><p><a target="_blank" rel="noopener" href="https://blog.csdn.net/qq_36495104/article/details/106061223">详细解析ret2_dl_runtime_resolve_.rel.plt结构体含义-CSDN博客</a></p>
+</li>
+<li><p>[<a target="_blank" rel="noopener" href="https://bbs.kanxue.com/thread-250703.htm">原创]ROP高级用法之ret2_dl_runtime_resolve-二进制漏洞-看雪-安全社区|安全招聘|kanxue.com</a></p>
+</li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>文章作者: </span><span class="post-copyright-info"><a href="https://ha1loh.github.io">HalloH</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>文章链接: </span><span class="post-copyright-info"><a href="https://ha1loh.github.io/article/6533.html">https://ha1loh.github.io/article/6533.html</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来自 <a href="https://ha1loh.github.io" target="_blank">HalloH's Blog</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/PWN/">PWN</a></div><div class="post_share"><div class="social-share" data-image="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221045523.jpg" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><div class="prev-post pull-left"><a href="/article/2066.html" title="Heap Exploitation-Off by one"><img class="cover" src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221046780.jpg" onerror="onerror=null;src='/img/404.jpg'" alt="cover of previous post"><div class="pagination-info"><div class="label">上一篇</div><div class="prev_info">Heap Exploitation-Off by one</div></div></a></div><div class="next-post pull-right"><a href="/article/ea72.html" title="Heap Exploitation-内存的分配"><img class="cover" src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221046927.jpg" onerror="onerror=null;src='/img/404.jpg'" alt="cover of next post"><div class="pagination-info"><div class="label">下一篇</div><div class="next_info">Heap Exploitation-内存的分配</div></div></a></div></nav><div class="relatedPosts"><div class="headline"><i class="fas fa-thumbs-up fa-fw"></i><span>相关推荐</span></div><div class="relatedPosts-list"><div><a href="/article/4622.html" title="Canary保护绕过"><img class="cover" src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221046927.jpg" alt="cover"><div class="content is-center"><div class="date"><i class="far fa-calendar-alt fa-fw"></i> 2023-10-07</div><div class="title">Canary保护绕过</div></div></a></div><div><a href="/article/2066.html" title="Heap Exploitation-Off by one"><img class="cover" src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221046780.jpg" alt="cover"><div class="content is-center"><div class="date"><i class="far fa-calendar-alt fa-fw"></i> 2023-11-12</div><div class="title">Heap Exploitation-Off by one</div></div></a></div><div><a href="/article/b53c.html" title="Heap Exploitation-tcache"><img class="cover" src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221045731.jpg" alt="cover"><div class="content is-center"><div class="date"><i class="far fa-calendar-alt fa-fw"></i> 2023-11-18</div><div class="title">Heap Exploitation-tcache</div></div></a></div><div><a href="/article/6fb0.html" title="Heap Exploitation-unlink"><img class="cover" src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221045523.jpg" alt="cover"><div class="content is-center"><div class="date"><i class="far fa-calendar-alt fa-fw"></i> 2023-12-18</div><div class="title">Heap Exploitation-unlink</div></div></a></div><div><a href="/article/ea72.html" title="Heap Exploitation-内存的分配"><img class="cover" src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221046927.jpg" alt="cover"><div class="content is-center"><div class="date"><i class="far fa-calendar-alt fa-fw"></i> 2023-10-30</div><div class="title">Heap Exploitation-内存的分配</div></div></a></div><div><a href="/article/673a.html" title="Heap Exploitation-内存管理概述"><img class="cover" src="https://halloh-picloud.oss-cn-beijing.aliyuncs.com/img/202312221045731.jpg" alt="cover"><div class="content is-center"><div class="date"><i class="far fa-calendar-alt fa-fw"></i> 2023-11-18</div><div class="title">Heap Exploitation-内存管理概述</div></div></a></div></div></div></div><div class="aside-content" id="aside-content"><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content is-expand"><ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#Stack-Overflow-%E9%AB%98%E7%BA%A7ROP"><span class="toc-number">1.</span> <span class="toc-text">Stack Overflow - 高级ROP</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#ret2dlreslove"><span class="toc-number">1.1.</span> <span class="toc-text">ret2dlreslove</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%8E%9F%E7%90%86"><span class="toc-number">1.1.1.</span> <span class="toc-text">原理</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#dl-runtime-resolve%E5%87%BD%E6%95%B0%E5%85%B7%E4%BD%93%E8%BF%90%E8%A1%8C%E6%A8%A1%E5%BC%8F"><span class="toc-number">1.1.2.</span> <span class="toc-text">_dl_runtime_resolve函数具体运行模式</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E4%BF%9D%E6%8A%A4%E6%8E%AA%E6%96%BD%E5%92%8C%E6%94%BB%E5%87%BB"><span class="toc-number">1.1.3.</span> <span class="toc-text">保护措施和攻击</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%E6%80%9D%E8%B7%AF%E4%B8%80%E2%80%94%E2%80%94%E7%9B%B4%E6%8E%A5%E6%8E%A7%E5%88%B6%E9%87%8D%E5%AE%9A%E4%BD%8D%E8%A1%A8%E9%A1%B9%E7%9A%84%E7%9B%B8%E5%85%B3%E5%86%85%E5%AE%B9"><span class="toc-number">1.1.3.1.</span> <span class="toc-text">思路一——直接控制重定位表项的相关内容</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#%E6%80%9D%E8%B7%AF%E4%BA%8C%E2%80%94%E2%80%94%E9%97%B4%E6%8E%A5%E6%8E%A7%E5%88%B6%E9%87%8D%E5%AE%9A%E4%BD%8D%E8%A1%A8%E9%A1%B9%E7%9A%84%E7%9B%B8%E5%85%B3%E5%86%85%E5%AE%B9"><span class="toc-number">1.1.3.2.</span> <span class="toc-text">思路二——间接控制重定位表项的相关内容</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#%E6%80%9D%E8%B7%AF%E4%B8%89%E2%80%94%E2%80%94%E4%BC%AA%E9%80%A0-link-map"><span class="toc-number">1.1.3.3.</span> <span class="toc-text">思路三——伪造 link_map</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#32%E4%BD%8D"><span class="toc-number">1.1.4.</span> <span class="toc-text">32位</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#NO-RELRO"><span class="toc-number">1.1.4.1.</span> <span class="toc-text">NO RELRO</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#%E8%AE%A1%E7%AE%97reloc-arg"><span class="toc-number">1.1.4.2.</span> <span class="toc-text">计算reloc_arg</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#%E8%AE%A1%E7%AE%97r-info"><span class="toc-number">1.1.4.3.</span> <span class="toc-text">计算r_info</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#%E8%AE%A1%E7%AE%97name-offset"><span class="toc-number">1.1.4.4.</span> <span class="toc-text">计算name_offset</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#64%E4%BD%8D"><span class="toc-number">1.1.5.</span> <span class="toc-text">64位</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#SROP"><span class="toc-number">1.2.</span> <span class="toc-text">SROP</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%8E%9F%E7%90%86-1"><span class="toc-number">1.2.1.</span> <span class="toc-text">原理</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%94%BB%E5%87%BB%E6%96%B9%E6%B3%95"><span class="toc-number">1.2.2.</span> <span class="toc-text">攻击方法</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%94%BB%E5%87%BB%E7%A4%BA%E4%BE%8B"><span class="toc-number">1.2.3.</span> <span class="toc-text">攻击示例</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E7%A4%BA%E4%BE%8B%E5%A4%8D%E7%8E%B0"><span class="toc-number">1.2.4.</span> <span class="toc-text">示例复现</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%8F%82%E8%80%83"><span class="toc-number">1.3.</span> <span class="toc-text">参考</span></a></li></ol></li></ol></div></div></div></div></main><footer id="footer"><div id="footer-wrap"><div class="copyright">&copy;2021 - 2023 By HalloH</div><div class="framework-info"><span>框架 </span><a target="_blank" rel="noopener" href="https://hexo.io">Hexo</a><span class="footer-separator">|</span><span>主题 </span><a target="_blank" rel="noopener" href="https://github.com/jerryc127/hexo-theme-butterfly">Butterfly</a></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="浅色和深色模式转换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js"></script><script src="/js/main.js"></script><script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox/fancybox.umd.min.js"></script><script src="https://cdn.jsdelivr.net/npm/node-snackbar/dist/snackbar.min.js"></script><div class="js-pjax"></div><script id="canvas_nest" defer="defer" color="0,0,255" opacity="0.7" zIndex="-1" count="99" mobile="false" src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/canvas-nest.min.js"></script><script async data-pjax src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="is-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据库加载中</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="搜索文章" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
